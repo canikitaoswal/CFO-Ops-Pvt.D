@@ -23,18 +23,56 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [dbSeeding, setDbSeeding] = useState(false);
 
-  // Master Interactive State variables loaded from the core files
-  const [leads, setLeads] = useState<Lead[]>(initialLeads);
-  const [clients, setClients] = useState<Client[]>(initialClients);
-  const [tasks, setTasks] = useState<ProjectTask[]>(initialTasks);
-  const [followups, setFollowups] = useState<FollowUp[]>(initialFollowUps);
-  const [documents, setDocuments] = useState<DocumentInfo[]>(initialDocuments);
-  const [team, setTeam] = useState<TeamMember[]>(initialTeamMembers);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  // Master Interactive State variables loaded from local storage caches or fallback arrays
+  const [leads, setLeads] = useState<Lead[]>(() => {
+    const saved = localStorage.getItem('cfo_leads');
+    return saved ? JSON.parse(saved) : initialLeads;
+  });
+  const [clients, setClients] = useState<Client[]>(() => {
+    const saved = localStorage.getItem('cfo_clients');
+    return saved ? JSON.parse(saved) : initialClients;
+  });
+  const [tasks, setTasks] = useState<ProjectTask[]>(() => {
+    const saved = localStorage.getItem('cfo_tasks');
+    return saved ? JSON.parse(saved) : initialTasks;
+  });
+  const [followups, setFollowups] = useState<FollowUp[]>(() => {
+    const saved = localStorage.getItem('cfo_followups');
+    return saved ? JSON.parse(saved) : initialFollowUps;
+  });
+  const [documents, setDocuments] = useState<DocumentInfo[]>(() => {
+    const saved = localStorage.getItem('cfo_documents');
+    return saved ? JSON.parse(saved) : initialDocuments;
+  });
+  const [team, setTeam] = useState<TeamMember[]>(() => {
+    const saved = localStorage.getItem('cfo_team');
+    return saved ? JSON.parse(saved) : initialTeamMembers;
+  });
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    const saved = localStorage.getItem('cfo_invoices');
+    return saved ? JSON.parse(saved) : initialInvoices;
+  });
 
-  // Auto-seed Firestore if authenticated and empty
+  // Save Sandbox state to localStorage whenever it changes
+  useEffect(() => {
+    if (!currentUser && !authLoading) {
+      localStorage.setItem('cfo_leads', JSON.stringify(leads));
+      localStorage.setItem('cfo_clients', JSON.stringify(clients));
+      localStorage.setItem('cfo_tasks', JSON.stringify(tasks));
+      localStorage.setItem('cfo_followups', JSON.stringify(followups));
+      localStorage.setItem('cfo_documents', JSON.stringify(documents));
+      localStorage.setItem('cfo_team', JSON.stringify(team));
+      localStorage.setItem('cfo_invoices', JSON.stringify(invoices));
+    }
+  }, [leads, clients, tasks, followups, documents, team, invoices, currentUser, authLoading]);
+
+  // Auto-seed Firestore if authenticated, database is empty and never seeded in this current browser
   const seedDbIfEmpty = async (user: FirebaseUser) => {
     if (!db) return;
+    if (localStorage.getItem('cfo_cloud_seeded') === 'true') {
+      console.log("Cloud already seeded or cleared once. Skipping automated fill.");
+      return;
+    }
     try {
       const snap = await getDocs(collection(db, 'leads'));
       if (snap.empty) {
@@ -68,6 +106,7 @@ export default function App() {
 
         await batch.commit();
         console.log("Firestore successfully initialized & seed data deployed.");
+        localStorage.setItem('cfo_cloud_seeded', 'true');
       }
     } catch (error) {
       console.error("Optional auto-seeding error (likely due to security rules or offline state):", error);
@@ -153,14 +192,14 @@ export default function App() {
           unsubInvoices();
         };
       } else {
-        // Revert to local mock datasets when signed out
-        setLeads(initialLeads);
-        setClients(initialClients);
-        setTasks(initialTasks);
-        setFollowups(initialFollowUps);
-        setDocuments(initialDocuments);
-        setTeam(initialTeamMembers);
-        setInvoices(initialInvoices);
+        // Load persistent local/sandbox datasets when signed out
+        setLeads(JSON.parse(localStorage.getItem('cfo_leads') || JSON.stringify(initialLeads)));
+        setClients(JSON.parse(localStorage.getItem('cfo_clients') || JSON.stringify(initialClients)));
+        setTasks(JSON.parse(localStorage.getItem('cfo_tasks') || JSON.stringify(initialTasks)));
+        setFollowups(JSON.parse(localStorage.getItem('cfo_followups') || JSON.stringify(initialFollowUps)));
+        setDocuments(JSON.parse(localStorage.getItem('cfo_documents') || JSON.stringify(initialDocuments)));
+        setTeam(JSON.parse(localStorage.getItem('cfo_team') || JSON.stringify(initialTeamMembers)));
+        setInvoices(JSON.parse(localStorage.getItem('cfo_invoices') || JSON.stringify(initialInvoices)));
       }
     });
 
@@ -201,6 +240,7 @@ export default function App() {
 
   // Sync state reset handler
   const resetDemoDataset = async () => {
+    localStorage.setItem('cfo_cloud_seeded', 'true');
     if (currentUser) {
       try {
         setDbSeeding(true);
@@ -238,6 +278,14 @@ export default function App() {
         setDbSeeding(false);
       }
     } else {
+      localStorage.setItem('cfo_leads', JSON.stringify(initialLeads));
+      localStorage.setItem('cfo_clients', JSON.stringify(initialClients));
+      localStorage.setItem('cfo_tasks', JSON.stringify(initialTasks));
+      localStorage.setItem('cfo_followups', JSON.stringify(initialFollowUps));
+      localStorage.setItem('cfo_documents', JSON.stringify(initialDocuments));
+      localStorage.setItem('cfo_team', JSON.stringify(initialTeamMembers));
+      localStorage.setItem('cfo_invoices', JSON.stringify(initialInvoices));
+      
       setLeads(initialLeads);
       setClients(initialClients);
       setTasks(initialTasks);
@@ -246,6 +294,152 @@ export default function App() {
       setTeam(initialTeamMembers);
       setInvoices(initialInvoices);
       alert("🔄 Local Demo Data has been restored to factory state successfully.");
+    }
+  };
+
+  // Completely wipe data for clean testing experience
+  const clearDatabase = async () => {
+    if (!window.confirm("Are you sure you want to delete ALL records? This will clear all pipelines, directories, billing ledgers, and coordination tasks, giving you an entirely blank slate for testing.")) return;
+    localStorage.setItem('cfo_cloud_seeded', 'true'); // block auto-seeding on fresh starts
+    
+    if (currentUser) {
+      try {
+        setDbSeeding(true);
+        console.log("Wiping remote Firestore database...");
+        
+        // Let's delete the items in current state
+        const deleteBatch = writeBatch(db);
+        leads.forEach(l => deleteBatch.delete(doc(db, 'leads', l.id)));
+        clients.forEach(c => deleteBatch.delete(doc(db, 'clients', c.id)));
+        tasks.forEach(t => deleteBatch.delete(doc(db, 'tasks', t.id)));
+        followups.forEach(f => deleteBatch.delete(doc(db, 'followups', f.id)));
+        documents.forEach(d => deleteBatch.delete(doc(db, 'documents', d.id)));
+        team.forEach(m => deleteBatch.delete(doc(db, 'team', m.id)));
+        invoices.forEach(i => deleteBatch.delete(doc(db, 'invoices', i.id)));
+        
+        await deleteBatch.commit();
+        alert("🗑️ Cloud Database wiped. All collections are now completely clean!");
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, 'wipe-batch');
+      } finally {
+        setDbSeeding(false);
+      }
+    } else {
+      localStorage.setItem('cfo_leads', JSON.stringify([]));
+      localStorage.setItem('cfo_clients', JSON.stringify([]));
+      localStorage.setItem('cfo_tasks', JSON.stringify([]));
+      localStorage.setItem('cfo_followups', JSON.stringify([]));
+      localStorage.setItem('cfo_documents', JSON.stringify([]));
+      localStorage.setItem('cfo_team', JSON.stringify([]));
+      localStorage.setItem('cfo_invoices', JSON.stringify([]));
+
+      setLeads([]);
+      setClients([]);
+      setTasks([]);
+      setFollowups([]);
+      setDocuments([]);
+      setTeam([]);
+      setInvoices([]);
+      alert("🗑️ Sandbox wiped. Temporary local states have been cleared successfully.");
+    }
+  };
+
+  // Operational Record Deletes
+  const handleDeleteLead = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Lead?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'leads', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `leads/${id}`);
+      }
+    } else {
+      setLeads(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteClient = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Client Record? This maps services, contacts, and metadata.")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'clients', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `clients/${id}`);
+      }
+    } else {
+      setClients(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteTask = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Compliance Task?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'tasks', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `tasks/${id}`);
+      }
+    } else {
+      setTasks(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteFollowUp = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Reminder Reminder/Follow-up?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'followups', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `followups/${id}`);
+      }
+    } else {
+      setFollowups(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteDocument = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm permanent removal of this Document from platform registry?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'documents', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `documents/${id}`);
+      }
+    } else {
+      setDocuments(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteTeamMember = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Team Member/CA Partner record?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'team', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `team/${id}`);
+      }
+    } else {
+      setTeam(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
+  const handleDeleteInvoice = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!window.confirm("Confirm deletion of this Invoice Ledger Entry?")) return;
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'invoices', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
+      }
+    } else {
+      setInvoices(prev => prev.filter(item => item.id !== id));
     }
   };
 
@@ -1325,6 +1519,14 @@ export default function App() {
                                 Convert to Client
                               </button>
                             )}
+
+                            <button 
+                              onClick={(e) => handleDeleteLead(l.id, e)}
+                              className="text-[10px] font-bold bg-white hover:bg-red-50 text-red-600 px-2 py-1 border border-red-200 rounded cursor-pointer transition-colors"
+                              title="Delete Lead"
+                            >
+                              Delete
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1495,9 +1697,16 @@ export default function App() {
                           </span>
                           <h3 className="font-extrabold text-slate-900 text-base mt-2">{client.companyName}</h3>
                         </div>
-                        <div className="text-right">
+                         <div className="text-right flex flex-col items-end shrink-0">
                           <span className="text-[10px] text-slate-400 font-mono block">CLIENT-ID:</span>
                           <span className="text-[10px] font-mono bg-slate-50 px-1.5 py-0.2 border rounded block text-slate-600">{client.id}</span>
+                          <button 
+                            onClick={(e) => handleDeleteClient(client.id, e)}
+                            className="text-[10px] text-red-500 hover:text-red-700 font-bold font-mono transition-colors mt-2 cursor-pointer"
+                            title="Delete Client Record"
+                          >
+                            🗑 Delete Record
+                          </button>
                         </div>
                       </div>
 
@@ -1613,20 +1822,36 @@ export default function App() {
                               <span className="text-[10px] text-slate-400 block font-mono">DUE DEADLINE</span>
                               <span className="text-xs font-bold text-slate-900 block font-mono bg-slate-100 px-1.5 py-0.2 rounded">{t.dueDate}</span>
                               
-                              <div className="mt-3">
+                              <div className="mt-3 flex flex-col items-end gap-1.5">
                                 <select 
                                   value={t.stage}
-                                  onChange={(e) => {
+                                  onChange={async (e) => {
                                     const value = e.target.value as ProjectTask['stage'];
-                                    setTasks(prev => prev.map(pt => pt.id === t.id ? { ...pt, stage: value } : pt));
+                                    if (currentUser) {
+                                      try {
+                                        await updateDoc(doc(db, 'tasks', t.id), { stage: value });
+                                      } catch (err) {
+                                        handleFirestoreError(err, OperationType.WRITE, `tasks/${t.id}`);
+                                      }
+                                    } else {
+                                      setTasks(prev => prev.map(pt => pt.id === t.id ? { ...pt, stage: value } : pt));
+                                    }
                                   }}
-                                  className="text-[11px] font-bold bg-white border rounded p-1 outline-none font-mono"
+                                  className="text-[11px] font-bold bg-white border rounded p-1 outline-none font-mono cursor-pointer"
                                 >
                                   <option value="Pending">Pending</option>
                                   <option value="In Progress">In Progress</option>
                                   <option value="Under Review">Under Review</option>
                                   <option value="Completed">Completed</option>
                                 </select>
+
+                                <button 
+                                  onClick={(e) => handleDeleteTask(t.id, e)}
+                                  className="text-[10px] text-red-500 hover:text-red-700 font-bold font-mono transition-colors cursor-pointer mt-1"
+                                  title="Delete checkoff task"
+                                >
+                                  🗑️ Delete
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -1760,22 +1985,42 @@ export default function App() {
 
                         {/* AUTO REMINDER SIMULATOR LINK */}
                         <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                          <button 
-                            onClick={() => handleSimulateNotification(`WhatsApp Remind drafted: "Dear ${f.name}, compliance reminder: ${f.description}"`)}
-                            className="bg-emerald-600 hover:bg-emerald-700 transition-colors text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                          >
-                            <span>WhatsApp remIND</span>
-                          </button>
+                          <div className="flex gap-1.5 items-center">
+                            <button 
+                              onClick={() => handleSimulateNotification(`WhatsApp Remind drafted: "Dear ${f.name}, compliance reminder: ${f.description}"`)}
+                              className="bg-emerald-600 hover:bg-emerald-700 transition-colors text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>WhatsApp remIND</span>
+                            </button>
+
+                            <button 
+                              onClick={(e) => handleDeleteFollowUp(f.id, e)}
+                              className="border border-slate-250 bg-white hover:bg-slate-50 transition-colors text-slate-500 px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                              title="Delete Reminder"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
                           
-                          <button 
-                            onClick={() => {
-                              setFollowups(prev => prev.map(fItem => fItem.id === f.id ? { ...fItem, status: 'Completed', escalationStatus: 'Normal' } : fItem));
-                              alert("Chase checklist stamped as COMPLETED");
-                            }}
-                            className="text-xs text-blue-600 hover:underline font-bold"
-                          >
-                            Mark Completed ✓
-                          </button>
+                          {f.status !== 'Completed' && (
+                            <button 
+                              onClick={async () => {
+                                if (currentUser) {
+                                  try {
+                                    await updateDoc(doc(db, 'followups', f.id), { status: 'Completed', escalationStatus: 'Normal' });
+                                  } catch (err) {
+                                    handleFirestoreError(err, OperationType.WRITE, `followups/${f.id}`);
+                                  }
+                                } else {
+                                  setFollowups(prev => prev.map(fItem => fItem.id === f.id ? { ...fItem, status: 'Completed', escalationStatus: 'Normal' } : fItem));
+                                }
+                                alert("Chase checklist stamped as COMPLETED");
+                              }}
+                              className="text-xs text-blue-600 hover:underline font-bold cursor-pointer"
+                            >
+                              Mark Completed ✓
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1814,20 +2059,38 @@ export default function App() {
 
                         {/* ENGAGEMENT BUTTONS */}
                         <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                          <button 
-                            onClick={() => handleSimulateNotification(`Email drafted to ${f.email} demanding update on interest subsidy files.`)}
-                            className="bg-blue-600 hover:bg-blue-750 text-white px-2 py-1 rounded text-[10px] font-bold cursor-pointer"
-                          >
-                            <span>Trigger Official Email</span>
-                          </button>
+                          <div className="flex gap-1.5 items-center">
+                            <button 
+                              onClick={() => handleSimulateNotification(`Email drafted to ${f.email} demanding update on interest subsidy files.`)}
+                              className="bg-blue-600 hover:bg-blue-750 text-white px-2 py-1 rounded text-[10px] font-bold cursor-pointer"
+                            >
+                              <span>Trigger Official Email</span>
+                            </button>
+
+                            <button 
+                              onClick={(e) => handleDeleteFollowUp(f.id, e)}
+                              className="border border-slate-250 bg-white hover:bg-slate-50 transition-colors text-slate-500 px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                              title="Delete Reminder"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
 
                           {f.status !== 'Completed' && (
                             <button 
-                              onClick={() => {
-                                setFollowups(prev => prev.map(fItem => fItem.id === f.id ? { ...fItem, status: 'Completed', escalationStatus: 'Normal' } : fItem));
+                              onClick={async () => {
+                                if (currentUser) {
+                                  try {
+                                    await updateDoc(doc(db, 'followups', f.id), { status: 'Completed', escalationStatus: 'Normal' });
+                                  } catch (err) {
+                                    handleFirestoreError(err, OperationType.WRITE, `followups/${f.id}`);
+                                  }
+                                } else {
+                                  setFollowups(prev => prev.map(fItem => fItem.id === f.id ? { ...fItem, status: 'Completed', escalationStatus: 'Normal' } : fItem));
+                                }
                                 alert("Regulatory checkpoint stamped as COMPLETED");
                               }}
-                              className="text-xs text-blue-600 hover:underline font-semibold"
+                              className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
                             >
                               Stamps Resolved
                             </button>
@@ -1961,13 +2224,23 @@ export default function App() {
                             </span>
                           )}
 
-                          <button 
-                            onClick={() => alert(`Downloading "${doc.name}" via authenticated pre-signed AWS S3 block (expires in 15 mins).`)}
-                            className="mt-2 text-xs text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
-                          >
-                            <Download size={11} />
-                            <span>Retrieve</span>
-                          </button>
+                          <div className="flex flex-col items-end gap-1.5 mt-2">
+                            <button 
+                              onClick={() => alert(`Downloading "${doc.name}" via authenticated pre-signed AWS S3 block (expires in 15 mins).`)}
+                              className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold cursor-pointer select-none whitespace-nowrap"
+                            >
+                              <Download size={11} />
+                              <span>Retrieve</span>
+                            </button>
+
+                            <button 
+                              onClick={(e) => handleDeleteDocument(doc.id, e)}
+                              className="text-[10px] text-red-500 hover:text-red-700 font-bold font-mono transition-colors cursor-pointer"
+                              title="Delete document record"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2016,9 +2289,18 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="text-[11px] text-slate-550 border-t pt-3 flex justify-between">
+                    <div className="text-[11px] text-slate-550 border-t pt-3 flex justify-between items-center bg-slate-50/50 -mx-5 -mb-5 px-5 py-3 rounded-b-xl border-slate-150">
                       <span>Active checklist: <strong>{member.activeTasks} Projects</strong></span>
-                      <span>{member.email}</span>
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-slate-500">{member.email}</span>
+                        <button 
+                          onClick={(e) => handleDeleteTeamMember(member.id, e)}
+                          className="text-red-500 hover:text-red-700 font-extrabold transition-colors text-[10px] font-mono cursor-pointer uppercase"
+                          title="Remove Associate"
+                        >
+                          ✕ Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -2138,6 +2420,7 @@ export default function App() {
                         <th className="px-6 py-3">Issue Date</th>
                         <th className="px-6 py-3">Due Deadline</th>
                         <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="text-xs text-slate-600 divide-y divide-slate-100">
@@ -2147,7 +2430,7 @@ export default function App() {
                           <td className="px-6 py-4 font-medium text-slate-700">{inv.clientName}</td>
                           <td className="px-6 py-4 font-bold text-slate-900">${inv.amount.toLocaleString()}</td>
                           <td className="px-6 py-4 leading-relaxed">
-                            {inv.items.map((it, idx) => (
+                            {inv.items?.map((it, idx) => (
                               <div key={idx} className="text-slate-500 text-[10px]">
                                 • {it.service} (${it.amount.toLocaleString()})
                               </div>
@@ -2163,6 +2446,15 @@ export default function App() {
                             }`}>
                               {inv.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={(e) => handleDeleteInvoice(inv.id, e)}
+                              className="text-red-500 hover:text-red-700 font-bold transition-all cursor-pointer text-xs font-mono select-none"
+                              title="Delete Invoice Record"
+                            >
+                              🗑️ Delete
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -2253,6 +2545,13 @@ export default function App() {
                     className="bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors text-slate-700 px-3 py-1.5 rounded text-xs font-bold font-mono inline-flex items-center gap-1 cursor-pointer"
                   >
                     <span>🔄 Reset Demo Data</span>
+                  </button>
+                  <button 
+                    onClick={clearDatabase}
+                    className="bg-red-50 hover:bg-red-150 border border-red-300 transition-all text-red-650 px-3 py-1.5 rounded text-xs font-bold font-mono inline-flex items-center gap-1 cursor-pointer"
+                    title="Clear database to allow clean testing from scratch"
+                  >
+                    <span>🗑️ Clear All Data</span>
                   </button>
                 </div>
               </div>
