@@ -1,0 +1,6 @@
+{
+  "name": "CFO Operations Platform",
+  "description": "Centralized business operations and strategy platform for consulting, accounting compliance and outsourced CFO services.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
