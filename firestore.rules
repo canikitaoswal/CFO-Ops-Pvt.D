@@ -1,0 +1,99 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- LEADS ---
+    match /leads/{leadId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(leadId) &&
+        request.resource.data.clientName is string &&
+        request.resource.data.clientName.size() <= 200 &&
+        request.resource.data.status in ['Enquiry', 'Proposal', 'Negotiation', 'Converted', 'Lost'];
+      allow update: if isVerifiedUser() &&
+        request.resource.data.clientName == resource.data.clientName &&
+        request.resource.data.status in ['Enquiry', 'Proposal', 'Negotiation', 'Converted', 'Lost'];
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- CLIENTS ---
+    match /clients/{clientId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(clientId) &&
+        request.resource.data.companyName is string &&
+        request.resource.data.companyName.size() <= 200;
+      allow update: if isVerifiedUser() &&
+        request.resource.data.companyName == resource.data.companyName;
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- TASKS ---
+    match /tasks/{taskId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(taskId) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() <= 250;
+      allow update: if isVerifiedUser();
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- FOLLOWUPS ---
+    match /followups/{followupId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(followupId) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() <= 200;
+      allow update: if isVerifiedUser();
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- DOCUMENTS ---
+    match /documents/{documentId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(documentId) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() <= 250;
+      allow update: if isVerifiedUser();
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- TEAM MEMBERS ---
+    match /team/{memberId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(memberId) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() <= 200;
+      allow update: if isVerifiedUser();
+      allow delete: if isVerifiedUser();
+    }
+
+    // --- INVOICES ---
+    match /invoices/{invoiceId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() && isValidId(invoiceId) &&
+        request.resource.data.invoiceNumber is string &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0;
+      allow update: if isVerifiedUser() &&
+        request.resource.data.amount == resource.data.amount;
+      allow delete: if isVerifiedUser();
+    }
+  }
+}

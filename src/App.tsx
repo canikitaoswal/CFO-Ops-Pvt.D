@@ -10,11 +10,19 @@ import {
 import { initialLeads, initialClients, initialTasks, initialFollowUps, initialDocuments, initialTeamMembers, initialInvoices } from './mockData';
 import { Lead, Client, ProjectTask, FollowUp, DocumentInfo, TeamMember, Invoice, DailyWorkUpdate, ClientContact } from './types';
 import { blueprintSections } from './blueprintData';
+import { auth, db, loginWithGoogle, logoutUser, handleFirestoreError, OperationType } from './firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 
 export default function App() {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'dashboard' | 'crm' | 'clients' | 'projects' | 'followups' | 'dms' | 'team' | 'billing' | 'blueprint' | 'settings'>('dashboard');
   
+  // Authentication & Session state
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [dbSeeding, setDbSeeding] = useState(false);
+
   // Master Interactive State variables loaded from the core files
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [clients, setClients] = useState<Client[]>(initialClients);
@@ -23,6 +31,141 @@ export default function App() {
   const [documents, setDocuments] = useState<DocumentInfo[]>(initialDocuments);
   const [team, setTeam] = useState<TeamMember[]>(initialTeamMembers);
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+
+  // Auto-seed Firestore if authenticated and empty
+  const seedDbIfEmpty = async (user: FirebaseUser) => {
+    if (!db) return;
+    try {
+      const snap = await getDocs(collection(db, 'leads'));
+      if (snap.empty) {
+        setDbSeeding(true);
+        console.log("Seeding Firestore databases with high-fidelity corporate datasets...");
+        
+        // Use batch writes to populate collections efficiently and atomically
+        const batch = writeBatch(db);
+        
+        initialLeads.forEach(lead => {
+          batch.set(doc(db, 'leads', lead.id), lead);
+        });
+        initialClients.forEach(client => {
+          batch.set(doc(db, 'clients', client.id), client);
+        });
+        initialTasks.forEach(task => {
+          batch.set(doc(db, 'tasks', task.id), task);
+        });
+        initialFollowUps.forEach(fup => {
+          batch.set(doc(db, 'followups', fup.id), fup);
+        });
+        initialDocuments.forEach(docInfo => {
+          batch.set(doc(db, 'documents', docInfo.id), docInfo);
+        });
+        initialTeamMembers.forEach(member => {
+          batch.set(doc(db, 'team', member.id), member);
+        });
+        initialInvoices.forEach(invoice => {
+          batch.set(doc(db, 'invoices', invoice.id), invoice);
+        });
+
+        await batch.commit();
+        console.log("Firestore successfully initialized & seed data deployed.");
+      }
+    } catch (error) {
+      console.error("Optional auto-seeding error (likely due to security rules or offline state):", error);
+    } finally {
+      setDbSeeding(false);
+    }
+  };
+
+  // Real-time Firebase Firestore Synchronizer
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      setAuthLoading(false);
+
+      if (user) {
+        // First check and auto-seed if empty
+        await seedDbIfEmpty(user);
+
+        // Subscribe to all collections
+        const unsubLeads = onSnapshot(collection(db, 'leads'), (snapshot) => {
+          const list: Lead[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as Lead);
+          });
+          setLeads(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'leads'));
+
+        const unsubClients = onSnapshot(collection(db, 'clients'), (snapshot) => {
+          const list: Client[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as Client);
+          });
+          setClients(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'clients'));
+
+        const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+          const list: ProjectTask[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as ProjectTask);
+          });
+          setTasks(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'tasks'));
+
+        const unsubFollowups = onSnapshot(collection(db, 'followups'), (snapshot) => {
+          const list: FollowUp[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as FollowUp);
+          });
+          setFollowups(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'followups'));
+
+        const unsubDocs = onSnapshot(collection(db, 'documents'), (snapshot) => {
+          const list: DocumentInfo[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as DocumentInfo);
+          });
+          setDocuments(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'documents'));
+
+        const unsubTeam = onSnapshot(collection(db, 'team'), (snapshot) => {
+          const list: TeamMember[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as TeamMember);
+          });
+          setTeam(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'team'));
+
+        const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
+          const list: Invoice[] = [];
+          snapshot.forEach(docSnap => {
+            list.push(docSnap.data() as Invoice);
+          });
+          setInvoices(list);
+        }, (err) => handleFirestoreError(err, OperationType.LIST, 'invoices'));
+
+        return () => {
+          unsubLeads();
+          unsubClients();
+          unsubTasks();
+          unsubFollowups();
+          unsubDocs();
+          unsubTeam();
+          unsubInvoices();
+        };
+      } else {
+        // Revert to local mock datasets when signed out
+        setLeads(initialLeads);
+        setClients(initialClients);
+        setTasks(initialTasks);
+        setFollowups(initialFollowUps);
+        setDocuments(initialDocuments);
+        setTeam(initialTeamMembers);
+        setInvoices(initialInvoices);
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
 
   // Business profile Settings loaded in state
   const [businessSettings, setBusinessSettings] = useState({
@@ -57,15 +200,53 @@ export default function App() {
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Sync state reset handler
-  const resetDemoDataset = () => {
-    setLeads(initialLeads);
-    setClients(initialClients);
-    setTasks(initialTasks);
-    setFollowups(initialFollowUps);
-    setDocuments(initialDocuments);
-    setTeam(initialTeamMembers);
-    setInvoices(initialInvoices);
-    alert("🔄 Demo Data has been restored to factory state successfully.");
+  const resetDemoDataset = async () => {
+    if (currentUser) {
+      try {
+        setDbSeeding(true);
+        console.log("Deep restoring remote database to factory defaults...");
+        const batch = writeBatch(db);
+        
+        // Write all standard mock data over the existing ones
+        initialLeads.forEach(lead => {
+          batch.set(doc(db, 'leads', lead.id), lead);
+        });
+        initialClients.forEach(client => {
+          batch.set(doc(db, 'clients', client.id), client);
+        });
+        initialTasks.forEach(task => {
+          batch.set(doc(db, 'tasks', task.id), task);
+        });
+        initialFollowUps.forEach(fup => {
+          batch.set(doc(db, 'followups', fup.id), fup);
+        });
+        initialDocuments.forEach(docInfo => {
+          batch.set(doc(db, 'documents', docInfo.id), docInfo);
+        });
+        initialTeamMembers.forEach(member => {
+          batch.set(doc(db, 'team', member.id), member);
+        });
+        initialInvoices.forEach(invoice => {
+          batch.set(doc(db, 'invoices', invoice.id), invoice);
+        });
+
+        await batch.commit();
+        alert("🔄 Remote Database successfully reset & fully synchronized with factory mock data.");
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'batch-reset');
+      } finally {
+        setDbSeeding(false);
+      }
+    } else {
+      setLeads(initialLeads);
+      setClients(initialClients);
+      setTasks(initialTasks);
+      setFollowups(initialFollowUps);
+      setDocuments(initialDocuments);
+      setTeam(initialTeamMembers);
+      setInvoices(initialInvoices);
+      alert("🔄 Local Demo Data has been restored to factory state successfully.");
+    }
   };
 
   // Keyboard shortcut listener (Ctrl+K = focus search, ESC = close overlay layers)
@@ -154,30 +335,48 @@ export default function App() {
   };
 
   // Add simulated activity in task log
-  const handleAddTaskUpdate = (taskId: string) => {
+  const handleAddTaskUpdate = async (taskId: string) => {
     if (!newUpdateMessage.trim()) return;
-    setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        const newUpdate: DailyWorkUpdate = {
-          id: `u-${Date.now()}`,
-          author: "Nikita Oswal (CFO)",
-          date: new Date().toISOString().split('T')[0],
-          message: newUpdateMessage
-        };
-        return {
-          ...t,
-          dailyUpdates: [...t.dailyUpdates, newUpdate],
-          stage: t.stage === 'Pending' ? 'In Progress' : t.stage // upgrade stage naturally
-        };
+    const newUpdate: DailyWorkUpdate = {
+      id: `u-${Date.now()}`,
+      author: currentUser?.displayName || "Nikita Oswal (CFO)",
+      date: new Date().toISOString().split('T')[0],
+      message: newUpdateMessage
+    };
+
+    if (currentUser) {
+      try {
+        const t = tasks.find(item => item.id === taskId);
+        if (t) {
+          const updatedUpdates = [...t.dailyUpdates, newUpdate];
+          const updatedStage = t.stage === 'Pending' ? 'In Progress' as const : t.stage;
+          await setDoc(doc(db, 'tasks', taskId), {
+            ...t,
+            dailyUpdates: updatedUpdates,
+            stage: updatedStage
+          });
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `tasks/${taskId}`);
       }
-      return t;
-    }));
+    } else {
+      setTasks(prev => prev.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            dailyUpdates: [...t.dailyUpdates, newUpdate],
+            stage: t.stage === 'Pending' ? 'In Progress' : t.stage // upgrade stage naturally
+          };
+        }
+        return t;
+      }));
+    }
     setNewUpdateMessage('');
     setSelectedTaskForUpdate(null);
   };
 
   // Add Client
-  const submitClient = (e: React.FormEvent) => {
+  const submitClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientForm.companyName) return;
 
@@ -200,7 +399,15 @@ export default function App() {
       remarks: clientForm.remarks || "Newly onboarded via Operations Center"
     };
 
-    setClients([newClient, ...clients]);
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'clients', newClient.id), newClient);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `clients/${newClient.id}`);
+      }
+    } else {
+      setClients([newClient, ...clients]);
+    }
     setShowAddClientModal(false);
     setClientForm({
       companyName: '',
@@ -217,7 +424,7 @@ export default function App() {
   };
 
   // Add Lead
-  const submitLead = (e: React.FormEvent) => {
+  const submitLead = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!leadForm.clientName) return;
 
@@ -239,7 +446,15 @@ export default function App() {
       followupDate: leadForm.followupDate
     };
 
-    setLeads([newLead, ...leads]);
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'leads', newLead.id), newLead);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `leads/${newLead.id}`);
+      }
+    } else {
+      setLeads([newLead, ...leads]);
+    }
     setShowAddLeadModal(false);
     setLeadForm({
       clientName: '',
@@ -255,7 +470,7 @@ export default function App() {
   };
 
   // Add Task
-  const submitTask = (e: React.FormEvent) => {
+  const submitTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskForm.title || !taskForm.clientName) return;
 
@@ -273,7 +488,15 @@ export default function App() {
       dailyUpdates: []
     };
 
-    setTasks([newTask, ...tasks]);
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'tasks', newTask.id), newTask);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `tasks/${newTask.id}`);
+      }
+    } else {
+      setTasks([newTask, ...tasks]);
+    }
     setShowAddTaskModal(false);
     setTaskForm({
       title: '',
@@ -287,11 +510,11 @@ export default function App() {
   };
 
   // Convert Lead to Client Automatically
-  const convertLeadToClientInstance = (lead: Lead) => {
-    // 1. Update lead state
-    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: 'Converted', pipelineStage: 'converted' } : l));
+  const convertLeadToClientInstance = async (lead: Lead) => {
+    // 1. Prepare updates
+    const updatedLeadStatus = { status: 'Converted' as const, pipelineStage: 'converted' as const };
     
-    // 2. Create actual running client
+    // 2. Prepare actual running client
     const customClient: Client = {
       id: `client-conv-${lead.id}`,
       companyName: lead.clientName,
@@ -306,7 +529,7 @@ export default function App() {
       remarks: `Lead converted automatically on 2026-05-22. Value contract: $${lead.totalValue}/yr. ${lead.remarks}`
     };
 
-    // 3. Create high-priority onboarding task
+    // 3. Prepare custom task
     const customTask: ProjectTask = {
       id: `task-conv-${lead.id}`,
       title: `Onboarding & Entity Strategy Setup`,
@@ -323,13 +546,26 @@ export default function App() {
       ]
     };
 
-    setClients([customClient, ...clients]);
-    setTasks([customTask, ...tasks]);
+    if (currentUser) {
+      try {
+        const batch = writeBatch(db);
+        batch.update(doc(db, 'leads', lead.id), updatedLeadStatus);
+        batch.set(doc(db, 'clients', customClient.id), customClient);
+        batch.set(doc(db, 'tasks', customTask.id), customTask);
+        await batch.commit();
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'lead-convert-batch');
+      }
+    } else {
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, ...updatedLeadStatus } : l));
+      setClients([customClient, ...clients]);
+      setTasks([customTask, ...tasks]);
+    }
     alert(`🎉 Excellent! Lead '${lead.clientName}' converted successfully! Active Onboarding tasks dispatched to Rohan Sharma.`);
   };
 
   // Document upload simulation
-  const handleAddDocument = (e: React.FormEvent) => {
+  const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadedDocName) return;
 
@@ -344,7 +580,15 @@ export default function App() {
       size: "2.4 MB"
     };
 
-    setDocuments([newDoc, ...documents]);
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'documents', newDoc.id), newDoc);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `documents/${newDoc.id}`);
+      }
+    } else {
+      setDocuments([newDoc, ...documents]);
+    }
     setUploadedDocName('');
     alert(`📂 Document "${newDoc.name}" uploaded successfully into SECURE VAULT with AES-256 validation.`);
   };
@@ -460,16 +704,69 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-3 bg-slate-950/40 border-b border-slate-800/60">
-          <div className="flex items-center gap-3 p-2 rounded bg-slate-800/40">
-            <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-xs">
-              NO
+        <div className="p-3 bg-slate-950/40 border-b border-slate-800/60 font-sans">
+          {authLoading ? (
+            <div className="flex items-center gap-2 p-2 justify-center text-xs text-slate-400">
+              <span className="animate-spin text-sm">🔄</span>
+              <span>Syncing session...</span>
             </div>
-            <div className="truncate flex-1">
-              <div className="text-xs font-semibold text-slate-100 truncate">Nikita Oswal</div>
-              <div className="text-[9px] text-emerald-400 font-mono tracking-wider">CFO PARTNER (ADMIN)</div>
+          ) : currentUser ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-2 rounded bg-slate-800/40 border border-slate-700/30">
+                {currentUser.photoURL ? (
+                  <img 
+                    src={currentUser.photoURL} 
+                    alt="Initials" 
+                    className="w-8 h-8 rounded-full border border-blue-500/30"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">
+                    {currentUser.displayName ? currentUser.displayName.slice(0, 2).toUpperCase() : 'CO'}
+                  </div>
+                )}
+                <div className="truncate flex-1">
+                  <div className="text-xs font-semibold text-slate-100 truncate">
+                    {currentUser.displayName || 'Consulting Partner'}
+                  </div>
+                  <div className="text-[9px] text-emerald-400 font-mono tracking-wider flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 block animate-pulse" />
+                    <span>DB CONNECTED</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-between items-center px-1">
+                <span className="text-[9px] text-slate-500 font-mono truncate max-w-[130px]" title={currentUser.email || ''}>
+                  {currentUser.email}
+                </span>
+                <button 
+                  onClick={logoutUser}
+                  className="text-[9px] text-red-450 hover:text-red-400 bg-red-950/20 px-2 py-0.5 rounded transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-1 space-y-2">
+              <div className="text-[10px] text-amber-500 flex items-center gap-1 font-semibold">
+                <span>⚠️</span>
+                <span>Offline / Sandbox Mode</span>
+              </div>
+              <button 
+                onClick={loginWithGoogle}
+                className="w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white p-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <span>🔑</span>
+                <span>Connect Google DB</span>
+              </button>
+              {dbSeeding && (
+                <div className="text-[9px] text-blue-400 flex items-center gap-1 justify-center animate-pulse">
+                  <span>⚙️</span> Seeding core tables...
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">

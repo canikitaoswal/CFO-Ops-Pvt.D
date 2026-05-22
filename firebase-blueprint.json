@@ -1,0 +1,168 @@
+{
+  "entities": {
+    "Lead": {
+      "title": "Lead",
+      "description": "Incoming sales opportunity / inquiry for CFO advisory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "industry": { "type": "string", "enum": ["Manufacturing", "Hotel/Resort", "Individual FP", "Other"] },
+        "revenue": { "type": "string" },
+        "contactName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "status": { "type": "string", "enum": ["Enquiry", "Proposal", "Negotiation", "Converted", "Lost"] },
+        "pipelineStage": { "type": "string", "enum": ["lead-captured", "meetings-scheduled", "proposal-tracked", "converted"] },
+        "assignedTo": { "type": "string" },
+        "totalValue": { "type": "number" },
+        "remarks": { "type": "string" },
+        "proposalDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "followupDate": { "type": "string" }
+      },
+      "required": ["id", "clientName", "industry", "status", "pipelineStage"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Retained client company master records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "industry": { "type": "string", "enum": ["Manufacturing", "Hotel/Resort", "Individual FP", "Other"] },
+        "pan": { "type": "string" },
+        "gst": { "type": "string" },
+        "registeredAddress": { "type": "string" },
+        "contacts": {
+          "type": "array",
+          "description": "List of client key contacts"
+        },
+        "serviceHistory": {
+          "type": "array"
+        },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "companyName", "industry"]
+    },
+    "ProjectTask": {
+      "title": "ProjectTask",
+      "description": "Compliance task or strategic audit assignment on a client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "clientName": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "stage": { "type": "string", "enum": ["Pending", "In Progress", "Under Review", "Completed"] },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"] },
+        "dueDate": { "type": "string" },
+        "description": { "type": "string" },
+        "recurringType": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "dailyUpdates": { "type": "array" }
+      },
+      "required": ["id", "title", "clientName", "stage", "priority"]
+    },
+    "FollowUp": {
+      "title": "FollowUp",
+      "description": "Chasers and escalations setup for clients or banks/tax consultancies",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["Client", "Partner"] },
+        "name": { "type": "string" },
+        "partnerType": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "description": { "type": "string" },
+        "scheduledDate": { "type": "string" },
+        "frequency": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Completed"] },
+        "escalationStatus": { "type": "string" }
+      },
+      "required": ["id", "targetType", "name", "phone", "email", "status"]
+    },
+    "DocumentInfo": {
+      "title": "DocumentInfo",
+      "description": "Audit trails, agreements and ledger records inside DMS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "clientName": { "type": "string" },
+        "category": { "type": "string" },
+        "version": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "status": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "size": { "type": "string" }
+      },
+      "required": ["id", "name", "clientName", "category", "uploadDate", "size"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Partner CFO or consultant logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" },
+        "activeTasks": { "type": "number" },
+        "workloadPercentage": { "type": "number" },
+        "performanceRating": { "type": "number" },
+        "dailyActivityLog": { "type": "array" }
+      },
+      "required": ["id", "name", "role", "email"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Client retainer and advisory bill records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "clientName": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Paid", "Unpaid", "Overdue"] },
+        "issueDate": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "items": { "type": "array" },
+        "retainerType": { "type": "string" },
+        "costHoursLog": { "type": "number" }
+      },
+      "required": ["id", "invoiceNumber", "clientName", "amount", "status"]
+    }
+  },
+  "firestore": {
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Database match path for CRM Leads and Prospects"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Database match path for Retained Client Directory"
+    },
+    "/tasks/{taskId}": {
+      "schema": "ProjectTask",
+      "description": "Database match path for Regulatory Control Tasks and Milestones"
+    },
+    "/followups/{followupId}": {
+      "schema": "FollowUp",
+      "description": "Database match path for Escalation follow-ups"
+    },
+    "/documents/{documentId}": {
+      "schema": "DocumentInfo",
+      "description": "Database match path for DMS Metadata"
+    },
+    "/team/{memberId}": {
+      "schema": "TeamMember",
+      "description": "Database match path for Consulting Team profiles"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Database match path for Billing Invoices Ledger"
+    }
+  }
+}
