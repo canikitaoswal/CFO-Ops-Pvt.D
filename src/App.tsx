@@ -1022,7 +1022,15 @@ export default function App() {
               <PhoneCall size={16} />
               <span>Follow-ups & remIND</span>
             </div>
-            <span className="text-red-400 text-[10px] bg-red-950/40 px-1 font-mono">1 Overdue</span>
+            {followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length > 0 ? (
+              <span className="text-red-400 text-[10px] bg-red-950/40 px-1 font-mono">
+                {followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length} Overdue
+              </span>
+            ) : followups.filter(f => f.status === 'Pending').length > 0 ? (
+              <span className="text-slate-400 text-[10px] bg-slate-900 px-1 font-mono">
+                {followups.filter(f => f.status === 'Pending').length} Pending
+              </span>
+            ) : null}
           </button>
 
           <button 
@@ -1189,10 +1197,10 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl font-bold tracking-tight text-slate-900">CFO Command Headquarters</h1>
-                  <p className="text-slate-500 text-xs mt-1">Real-time status monitor for 4 active consultants servicing manufacturing and leisure assets.</p>
+                  <p className="text-slate-500 text-xs mt-1">Real-time status monitor for {team.length} active consultants servicing {clients.length} clients across {Array.from(new Set(clients.map(c => c.industry))).filter(Boolean).slice(0, 3).join(', ') || 'various sectors'}.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 font-mono">Current system date: May 22, 2026</span>
+                  <span className="text-xs text-slate-500 font-mono">Current system date: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   <button onClick={() => alert("Re-syncing with MCA, GSTIN portal & Banker dashboards...")} className="p-1 px-2.5 text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 rounded flex items-center gap-1.5">
                     <RefreshCw size={12} className="animate-spin-slow" />
                     <span>Sync Gates</span>
@@ -1210,7 +1218,12 @@ export default function App() {
                   <div className="flex items-end justify-between">
                     <div>
                       <span className="text-3xl font-extrabold text-slate-900">{activeLeadsCount}</span>
-                      <span className="text-emerald-500 text-[11px] block mt-1">High conversion rating</span>
+                      <span className="text-emerald-500 text-[11px] block mt-1">
+                        {leads.filter(l => l.status === 'Converted').length > 0 
+                          ? `${leads.filter(l => l.status === 'Converted').length} leads converted`
+                          : activeLeadsCount > 0 ? 'High conversion rating' : 'No active leads'
+                        }
+                      </span>
                     </div>
                     <span className="text-xs font-semibold text-blue-600 group-hover:translate-x-1 transition-transform">→</span>
                   </div>
@@ -1224,7 +1237,12 @@ export default function App() {
                   <div className="flex items-end justify-between">
                     <div>
                       <span className="text-3xl font-extrabold text-blue-600">{inProgressTasksCount}</span>
-                      <span className="text-slate-500 text-[11px] block mt-1">3 Under review by Partner</span>
+                      <span className="text-slate-500 text-[11px] block mt-1">
+                        {tasks.filter(t => t.stage === 'Under Review').length > 0 
+                          ? `${tasks.filter(t => t.stage === 'Under Review').length} under review by Partner`
+                          : inProgressTasksCount > 0 ? `${tasks.filter(t => t.stage === 'In Progress').length} in progress` : 'All tasks completed'
+                        }
+                      </span>
                     </div>
                     <span className="text-xs font-semibold text-blue-600 group-hover:translate-x-1 transition-transform">→</span>
                   </div>
@@ -1238,7 +1256,12 @@ export default function App() {
                   <div className="flex items-end justify-between">
                     <div>
                       <span className="text-3xl font-extrabold text-red-500">{followupsTodayCount}</span>
-                      <span className="text-amber-600 text-[11px] block mt-1">1 overdue alert</span>
+                      <span className="text-amber-600 text-[11px] block mt-1">
+                        {followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length > 0 
+                          ? `${followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length} overdue alert(s)`
+                          : followupsTodayCount > 0 ? 'All follow-ups scheduled' : 'No pending alerts'
+                        }
+                      </span>
                     </div>
                     <span className="text-xs font-semibold text-blue-600 group-hover:translate-x-1 transition-transform">→</span>
                   </div>
@@ -1252,7 +1275,12 @@ export default function App() {
                   <div className="flex items-end justify-between">
                     <div>
                       <span className="text-3xl font-extrabold text-slate-900">${totalOutstandingBilling.toLocaleString()}</span>
-                      <span className="text-amber-500 text-[11px] block mt-1">Starlight polymers overdue</span>
+                      <span className="text-amber-500 text-[11px] block mt-1">
+                        {invoices.filter(i => i.status === 'Overdue').length > 0 
+                          ? `${invoices.filter(i => i.status === 'Overdue')[0].clientName} overdue`
+                          : 'No outstanding overdues'
+                        }
+                      </span>
                     </div>
                     <span className="text-xs font-semibold text-blue-600 group-hover:translate-x-1 transition-transform">→</span>
                   </div>
@@ -1332,7 +1360,13 @@ export default function App() {
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                     <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                       <h4 className="font-bold text-xs text-slate-800 uppercase tracking-widest">Follow ups Due</h4>
-                      <span className="text-[10px] text-red-500 font-bold font-mono">⚠️ 1 Overdue</span>
+                      {followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length > 0 ? (
+                        <span className="text-[10px] text-red-500 font-bold font-mono">⚠️ {followups.filter(f => f.status === 'Pending' && f.escalationStatus === 'Overdue').length} Overdue</span>
+                      ) : followups.filter(f => f.status === 'Pending').length > 0 ? (
+                        <span className="text-[10px] text-slate-500 font-medium font-mono">{followups.filter(f => f.status === 'Pending').length} Pending</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-mono">Clean list</span>
+                      )}
                     </div>
 
                     <div className="space-y-3">
@@ -1627,7 +1661,7 @@ export default function App() {
                     </div>
 
                     <div className="mt-4 pt-3 border-t text-[10px] text-slate-400">
-                      Standard pricing calculations are set for 4 active personnel. GST liability mapped automatically.
+                      Standard pricing calculations are set for {team.length} active personnel. GST liability mapped automatically.
                     </div>
                   </div>
                 </div>
